@@ -41,6 +41,12 @@ function IntelPanel({ input, r }) {
                 <span className="warn-title">{w.title}</span>
               </div>
               <p className="warn-detail">{w.detail}</p>
+              {w.fix ? (
+                <p className="warn-fix">
+                  <span className="warn-fix-label">{w.level === "fail" ? "⚠ Fix: " : "→ Tip: "}</span>
+                  {w.fix}
+                </p>
+              ) : null}
             </div>
           ))}
         </div>
