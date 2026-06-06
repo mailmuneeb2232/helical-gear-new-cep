@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark" data-density="comfortable">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>HelixWorks — Helical Gear Design</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div id="root"></div>
+
+  <script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+
+  <!-- engine + helpers (plain JS) -->
+  <script src="gear-engine.js"></script>
+  <script src="units.js"></script>
+
+  <!-- React component files -->
+  <script type="text/babel" src="tweaks-panel.jsx"></script>
+  <script type="text/babel" src="ui-components.jsx"></script>
+  <script type="text/babel" src="viz.jsx"></script>
+  <script type="text/babel" src="factor-detail.jsx"></script>
+  <script type="text/babel" src="sidebar.jsx"></script>
+  <script type="text/babel" src="workspace.jsx"></script>
+  <script type="text/babel" src="intel-panel.jsx"></script>
+
+  <script type="text/babel" data-presets="react">
+    const { useState, useEffect, useMemo, useCallback } = React;
+
+    const TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
+      "theme": "light",
+      "accent": "#2A6FDB",
+      "density": "compact"
+    }/*EDITMODE-END*/;
+
+    function Logo() {
+      return (
+        <svg className="brand-mark" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <g stroke="var(--accent)" strokeWidth="2" strokeLinejoin="round" fill="var(--accent-dim)">
+            <path d="M20 5 L23 8 L27 7 L28 11 L32 13 L31 17 L34 20 L31 23 L32 27 L28 28 L27 32 L23 31 L20 34 L17 31 L13 32 L12 28 L8 27 L9 23 L6 20 L9 17 L8 13 L12 11 L13 7 L17 8 Z" />
+          </g>
+          <circle cx="20" cy="20" r="6" fill="var(--bg-0)" stroke="var(--accent-2)" strokeWidth="2" />
+        </svg>
+      );
+    }
+
+    function PresetMenu({ onPick }) {
+      const [open, setOpen] = useState(false);
+      const ref = React.useRef(null);
+      useEffect(() => {
+        const h = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+        document.addEventListener("mousedown", h);
+        return () => document.removeEventListener("mousedown", h);
+      }, []);
+      return (
+        <div className="preset-menu" ref={ref}>
+          <button className="tool-btn" onClick={() => setOpen((o) => !o)}>
+            <svg className="tool-ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4"><path d="M2 3h12M2 8h12M2 13h8"/></svg>
+            Load problem
+            <svg className="tool-ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" style={{ width: 11 }}><path d="M4 6l4 4 4-4"/></svg>
+          </button>
+          {open ? (
+            <div className="preset-pop">
+              {window.GearEngine.PRESETS.map((p) => (
+                <button key={p.id} className="preset-item" onClick={() => { onPick(p); setOpen(false); }}>
+                  <span className="preset-name">{p.name}</span>
+                  <span className="preset-blurb">{p.blurb}</span>
+                </button>
+              ))}
+            </div>
+          ) : null}
+        </div>
+      );
+    }
+
+    function Topbar({ input, set, onPickPreset, onReset }) {
+      const U = window.Units;
+      return (
+        <header className="topbar">
+          <div className="brand">
+            <Logo />
+            <div>
+              <div className="brand-name">HelixWorks</div>
+              <div className="brand-sub">Gear Design Studio</div>
+            </div>
+          </div>
+          <div className="topbar-spacer" />
+          <div className="topbar-tools">
+            <Segmented
+              value={input.units}
+              size="sm"
+              onChange={(v) => set({ units: v })}
+              options={[{ value: "imperial", label: "Imperial" }, { value: "metric", label: "Metric" }]}
+            />
+            <PresetMenu onPick={onPickPreset} />
+            <button className="tool-btn" onClick={onReset}>
+              <svg className="tool-ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4"><path d="M13 8a5 5 0 1 1-1.5-3.5M13 2v3h-3"/></svg>
+              Reset
+            </button>
+            <button className="tool-btn primary" onClick={() => window.print()}>
+              <svg className="tool-ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4"><path d="M8 2v8m0 0L5 7m3 3l3-3M2 13h12"/></svg>
+              Export spec
+            </button>
+          </div>
+        </header>
+      );
+    }
+
+    /* ---- Auto-size routine: pick a face width to hit overlap + margins ---- */
+    function autoSize(input) {
+      const E = window.GearEngine;
+      // target face width ~ 12/Pn (mid of 3π…5π·m band), clamped to slider range
+      let F = +(12 / input.Pn).toFixed(2);
+      F = Math.max(0.25, Math.min(6, F));
+      // bump until axial overlap >= 2 if possible
+      let guard = 0;
+      while (guard++ < 40) {
+        const test = { ...input, F };
+        const r = E.compute(test);
+        if (r.axialContact >= 2.0 || F >= 6) break;
+        F = +(F + 0.05).toFixed(2);
+      }
+      return F;
+    }
+
+    function App() {
+      const E = window.GearEngine;
+      const [t, setTweak] = useTweaks(TWEAK_DEFAULTS);
+      const [input, setInput] = useState(E.DEFAULT_INPUT);
+      const [tab, setTab] = useState("overview");
+      const [openSections, setOpenSections] = useState({ power: true, geom: true, tooth: false, mat: true, qual: false });
+
+      // apply theme + density tweaks to <html>
+      useEffect(() => {
+        document.documentElement.setAttribute("data-theme", t.theme);
+        document.documentElement.setAttribute("data-density", t.density);
+        document.documentElement.style.setProperty("--accent", t.accent);
+        // derive a lighter accent-2 and dim
+        document.documentElement.style.setProperty("--accent-2", shade(t.accent, 18));
+        document.documentElement.style.setProperty("--accent-dim", hexA(t.accent, t.theme === "light" ? 0.10 : 0.16));
+      }, [t.theme, t.density, t.accent]);
+
+      const set = useCallback((patch) => {
+        setInput((prev) => {
+          let next = { ...prev, ...patch };
+          // Gear speed (target output rpm) drives the gear tooth count.
+          if ("gearRpm" in patch || "rpm" in patch || "Np" in patch) {
+            next.Ng = E.teethForSpeed(next.Np, next.rpm, next.gearRpm);
+          }
+          // Direct edit of Ng updates the target gear speed to match.
+          if ("Ng" in patch) {
+            next.gearRpm = Math.round(next.rpm / (next.Ng / next.Np));
+          }
+          // in auto mode, recompute face width whenever geometry/load changes
+          if (next.mode === "auto") {
+            const touched = patch.mode === "auto" || ["Pn", "Np", "Ng", "gearRpm", "helix", "power", "rpm", "pressure"].some((k) => k in patch);
+            if (touched || !("F" in patch)) {
+              if (!("F" in patch)) next.F = autoSize(next);
+            }
+          }
+          return next;
+        });
+      }, []);
+
+      const toggleSection = useCallback((id) => {
+        setOpenSections((o) => ({ ...o, [id]: !o[id] }));
+      }, []);
+
+      const r = useMemo(() => E.compute(input), [input]);
+
+      const onPickPreset = (preset) => {
+        let next = { ...preset.input, units: input.units };
+        // make sure derived geometry is consistent with the preset's target speed
+        next.Ng = E.teethForSpeed(next.Np, next.rpm, next.gearRpm);
+        if (next.mode === "auto") next.F = autoSize(next);
+        setInput(next);
+        setTab(preset.id === "forces" ? "overview" : "overview");
+      };
+      const onReset = () => { setInput({ ...E.DEFAULT_INPUT, units: input.units }); };
+
+      return (
+        <div className="app">
+          <Topbar input={input} set={set} onPickPreset={onPickPreset} onReset={onReset} />
+          <div className="body-grid">
+            <Sidebar input={input} set={set} r={r} openSections={openSections} toggleSection={toggleSection} />
+            <Workspace input={input} r={r} tab={tab} setTab={setTab} />
+            <IntelPanel input={input} r={r} />
+          </div>
+
+          <TweaksPanel>
+            <TweakSection label="Appearance" />
+            <TweakRadio label="Theme" value={t.theme} options={["dark", "light"]} onChange={(v) => setTweak("theme", v)} />
+            <TweakRadio label="Density" value={t.density} options={["comfortable", "compact"]} onChange={(v) => setTweak("density", v)} />
+            <TweakColor label="Accent" value={t.accent}
+              options={["#2A6FDB", "#23a094", "#D97757", "#b8a04a", "#7A5AE0"]}
+              onChange={(v) => setTweak("accent", v)} />
+          </TweaksPanel>
+        </div>
+      );
+    }
+
+    /* color helpers for accent tweak */
+    function hexA(hex, a) {
+      const c = hex.replace("#", "");
+      const r = parseInt(c.slice(0, 2), 16), g = parseInt(c.slice(2, 4), 16), b = parseInt(c.slice(4, 6), 16);
+      return `rgba(${r},${g},${b},${a})`;
+    }
+    function shade(hex, amt) {
+      const c = hex.replace("#", "");
+      let r = parseInt(c.slice(0, 2), 16), g = parseInt(c.slice(2, 4), 16), b = parseInt(c.slice(4, 6), 16);
+      r = Math.min(255, r + amt); g = Math.min(255, g + amt); b = Math.min(255, b + amt);
+      return "#" + [r, g, b].map((x) => x.toString(16).padStart(2, "0")).join("");
+    }
+
+    ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+  </script>
+</body>
+</html>
