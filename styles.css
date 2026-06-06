@@ -67,7 +67,9 @@ body {
   font-family: var(--font);
   font-size: 13px;
   -webkit-font-smoothing: antialiased;
-  overflow: hidden;
+  /* allow page scroll on small screens; desktop uses grid scroll instead */
+  overflow-x: hidden;
+  overflow-y: auto;
 }
 .mono { font-family: var(--mono); font-feature-settings: "tnum" 1; letter-spacing: -0.01em; }
 ::selection { background: var(--accent-dim); }
@@ -76,7 +78,7 @@ body {
 .app {
   display: grid;
   grid-template-rows: auto 1fr;
-  height: 100vh;
+  min-height: 100vh;
 }
 .topbar {
   display: flex;
@@ -112,7 +114,8 @@ body {
   display: grid;
   grid-template-columns: 340px 1fr 320px;
   min-height: 0;
-  height: 100%;
+  /* on desktop fill remaining viewport height so panels can scroll independently */
+  height: calc(100vh - 54px);
 }
 
 /* ---------- Sidebar ---------- */
@@ -120,7 +123,10 @@ body {
   background: var(--bg-1);
   border-right: 1px solid var(--line);
   overflow-y: auto;
-  padding-bottom: 40px;
+  /* extra bottom padding so last section never hides behind viewport edge */
+  padding-bottom: 60px;
+  /* clip scroll to its own column only */
+  overscroll-behavior: contain;
 }
 .sidebar-top { padding: var(--pad); border-bottom: 1px solid var(--line); }
 .sidebar-mode { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
@@ -481,7 +487,7 @@ body {
 .fvec-a { color: var(--pass); } .fvec-a line { stroke: var(--pass); } .fvec-a text { fill: var(--pass); }
 
 /* ---------- Intel panel ---------- */
-.intel { background: var(--bg-1); border-left: 1px solid var(--line); overflow-y: auto; padding-bottom: 40px; }
+.intel { background: var(--bg-1); border-left: 1px solid var(--line); overflow-y: auto; padding-bottom: 60px; overscroll-behavior: contain; }
 .intel-title { padding: var(--pad); border-bottom: 1px solid var(--line); }
 .intel-title-main { display: block; font-size: 13px; font-weight: 600; }
 .intel-title-sub { font-size: 10.5px; color: var(--text-3); text-transform: uppercase; letter-spacing: 0.05em; }
@@ -559,15 +565,138 @@ body {
 .assume-val { font-size: 11.5px; color: var(--accent); white-space: nowrap; }
 .assume-reason { margin: 4px 0 0; font-size: 10.5px; line-height: 1.5; color: var(--text-3); }
 
-/* responsive */
-@media (max-width: 1280px) {
-  .body-grid { grid-template-columns: 300px 1fr 280px; }
-  .kpi-grid { grid-template-columns: repeat(2, 1fr); }
+/* ============================================================
+   Responsive layout
+   ============================================================ */
+
+/* ---- large desktop (≥ 1400px) ---- */
+@media (min-width: 1400px) {
+  .body-grid { grid-template-columns: 360px 1fr 340px; }
 }
-@media (max-width: 1040px) {
-  .body-grid { grid-template-columns: 1fr; grid-template-rows: auto auto auto; overflow-y: auto; }
-  .sidebar, .intel { border: 0; border-bottom: 1px solid var(--line); }
-  .app { overflow-y: auto; }
+
+/* ---- medium desktop / small laptop (< 1280px) ---- */
+@media (max-width: 1279px) {
+  .body-grid { grid-template-columns: 290px 1fr 260px; }
+  .kpi-grid { grid-template-columns: repeat(2, 1fr); }
+  .compare-grid { grid-template-columns: 1fr 1fr; }
+  .factor-grid { grid-template-columns: repeat(3, 1fr); }
+}
+
+/* ---- tablet landscape (< 1040px): collapse to stacked panels ---- */
+@media (max-width: 1039px) {
+  /* The body no longer needs a fixed height — let the page scroll */
+  .body-grid {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto;
+    height: auto;
+  }
+
+  /* Each panel scrolls its own content; page scrolls overall */
+  .sidebar, .intel {
+    border: none;
+    border-bottom: 1px solid var(--line);
+    overflow-y: visible;
+    height: auto;
+    max-height: none;
+    padding-bottom: 8px;
+  }
+
+  .workspace {
+    min-height: 80vh;
+  }
+
+  .workspace-scroll {
+    overflow-y: visible;
+  }
+
+  .kpi-grid { grid-template-columns: repeat(2, 1fr); }
+  .ov-cols  { grid-template-columns: 1fr; }
+  .compare-grid { grid-template-columns: 1fr; }
+  .meter-grid { grid-template-columns: 1fr; }
+  .factor-grid { grid-template-columns: repeat(3, 1fr); }
+  .viz-cols { grid-template-columns: 1fr; }
+  .sug-mat-row { grid-template-columns: 1fr; }
+}
+
+/* ---- tablet portrait / large phone (< 768px) ---- */
+@media (max-width: 767px) {
+  /* Compact token overrides */
+  :root {
+    --pad: 12px;
+    --gap: 10px;
+    font-size: 12px;
+  }
+
+  /* Topbar: wrap to two rows */
+  .topbar {
+    flex-wrap: wrap;
+    height: auto;
+    padding: 10px 14px;
+    gap: 10px;
+  }
+  .topbar-spacer { display: none; }
+  .topbar-tools {
+    width: 100%;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .tool-btn { font-size: 11px; height: 30px; padding: 0 10px; }
+
+  /* Tabbar: allow horizontal scroll */
+  .tabbar {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    gap: 2px;
+    padding: 0 10px;
+    /* hide scrollbar track */
+    scrollbar-width: none;
+  }
+  .tabbar::-webkit-scrollbar { display: none; }
+  .tab { padding: 7px 11px; font-size: 11.5px; white-space: nowrap; flex-shrink: 0; }
+  .verdict { font-size: 10.5px; padding: 4px 9px; flex-shrink: 0; }
+
+  /* KPI cards → single column on very narrow */
+  .kpi-grid { grid-template-columns: 1fr 1fr; gap: 8px; }
+  .kpi-value { font-size: 22px; }
+
+  /* Factor chips → 2 columns */
+  .factor-grid { grid-template-columns: repeat(2, 1fr); gap: 8px; }
+
+  /* Compare cards → full width stacked */
+  .compare-grid { grid-template-columns: 1fr; gap: 10px; }
+
+  /* Gear schematic: let SVG shrink */
+  .viz-svg { max-width: 100%; }
+  .viz-cols { grid-template-columns: 1fr; }
+
+  /* Stress plot */
+  .sp-row-4 { grid-template-columns: 100px 1fr; }
+
+  /* Modal */
+  .factor-modal { max-width: 100%; margin: 0 8px; }
+
+  /* Preset pop */
+  .preset-pop { width: 260px; }
+}
+
+/* ---- small phone (< 480px) ---- */
+@media (max-width: 479px) {
+  .kpi-grid { grid-template-columns: 1fr; }
+  .factor-grid { grid-template-columns: repeat(2, 1fr); }
+  .mat-req-row { grid-template-columns: 1fr 1fr; }
+  .ko-col-heads,
+  .ko-row { grid-template-columns: 90px repeat(3, 1fr); gap: 2px; }
+  .ko-cell { font-size: 11px; padding: 6px 2px; }
+  .ko-row-head { font-size: 9.5px; }
+  /* Topbar brand: shrink text on tiny screens */
+  .brand-name { font-size: 13px; }
+  .brand-sub  { display: none; }
+  /* Panel padding */
+  .panel { padding: 11px; }
+  .tabpane { gap: 12px; }
+  /* Factor modal full-screen */
+  .modal-backdrop { padding: 0; align-items: flex-end; }
+  .factor-modal { max-height: 92vh; border-radius: var(--r-lg) var(--r-lg) 0 0; }
 }
 
 /* ---- auto-material sidebar cards ---- */
