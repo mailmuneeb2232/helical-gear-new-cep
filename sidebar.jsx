@@ -53,6 +53,9 @@ function Sidebar({ input, set, r, openSections, toggleSection }) {
 
       <Section id="geom" letter="02" title="Gear Geometry" open={openSections.geom} onToggle={toggleSection}
         eye={!auto} onEye={(manual) => set({ mode: manual ? "manual" : "auto" })}>
+
+        <StandardTeethSelect input={input} set={set} />
+
         <SliderInput
           label="Pinion teeth Np" value={input.Np} unit="T" min={10} max={40} step={1}
           onChange={(v) => set({ Np: v })}
@@ -240,6 +243,73 @@ function Sidebar({ input, set, r, openSections, toggleSection }) {
         </div>
       </Section>
     </aside>
+  );
+}
+
+/* ---------- Standard Teeth Dropdown ---------- */
+const STANDARD_TEETH = [
+  { value: "", label: "— Custom (use sliders below) —", Np: null, Ng: null },
+  // ---- 1.5 : 1 ----
+  { value: "20_30", label: "Np 20 / Ng 30  — Ratio 1.5:1", Np: 20, Ng: 30 },
+  { value: "24_36", label: "Np 24 / Ng 36  — Ratio 1.5:1", Np: 24, Ng: 36 },
+  // ---- 2 : 1 ----
+  { value: "17_34", label: "Np 17 / Ng 34  — Ratio 2:1  (min-undercut pinion)", Np: 17, Ng: 34 },
+  { value: "20_40", label: "Np 20 / Ng 40  — Ratio 2:1", Np: 20, Ng: 40 },
+  { value: "24_48", label: "Np 24 / Ng 48  — Ratio 2:1", Np: 24, Ng: 48 },
+  { value: "25_50", label: "Np 25 / Ng 50  — Ratio 2:1", Np: 25, Ng: 50 },
+  // ---- 2.5 : 1 ----
+  { value: "20_50", label: "Np 20 / Ng 50  — Ratio 2.5:1", Np: 20, Ng: 50 },
+  { value: "24_60", label: "Np 24 / Ng 60  — Ratio 2.5:1", Np: 24, Ng: 60 },
+  // ---- 3 : 1 ----
+  { value: "17_51", label: "Np 17 / Ng 51  — Ratio 3:1  (AGMA recommended minimum pinion)", Np: 17, Ng: 51 },
+  { value: "20_60", label: "Np 20 / Ng 60  — Ratio 3:1", Np: 20, Ng: 60 },
+  { value: "21_63", label: "Np 21 / Ng 63  — Ratio 3:1", Np: 21, Ng: 63 },
+  { value: "24_72", label: "Np 24 / Ng 72  — Ratio 3:1", Np: 24, Ng: 72 },
+  { value: "25_75", label: "Np 25 / Ng 75  — Ratio 3:1  (Shigley Ex. 10-3 geometry)", Np: 25, Ng: 75 },
+  // ---- 4 : 1 ----
+  { value: "19_76", label: "Np 19 / Ng 76  — Ratio 4:1", Np: 19, Ng: 76 },
+  { value: "20_80", label: "Np 20 / Ng 80  — Ratio 4:1", Np: 20, Ng: 80 },
+  { value: "21_84", label: "Np 21 / Ng 84  — Ratio 4:1", Np: 21, Ng: 84 },
+  // ---- 5 : 1 ----
+  { value: "17_85", label: "Np 17 / Ng 85  — Ratio 5:1  (max recommended single-stage)", Np: 17, Ng: 85 },
+  { value: "20_100", label: "Np 20 / Ng 100 — Ratio 5:1", Np: 20, Ng: 100 },
+];
+
+function StandardTeethSelect({ input, set }) {
+  // Find which preset matches current Np/Ng (if any)
+  const current = STANDARD_TEETH.find(
+    (p) => p.Np === input.Np && p.Ng === input.Ng
+  );
+  const val = current ? current.value : "";
+
+  const onChange = (v) => {
+    const preset = STANDARD_TEETH.find((p) => p.value === v);
+    if (!preset || preset.Np === null) return;
+    set({ Np: preset.Np, Ng: preset.Ng });
+  };
+
+  return (
+    <div className="field">
+      <div className="field-head">
+        <label className="field-label">
+          Standard tooth-count pair
+          <Info text="Common AGMA-recommended Np / Ng combinations grouped by gear ratio. Selecting one sets both sliders instantly. Minimum 17-tooth pinion avoids undercutting for most helix angles." />
+        </label>
+      </div>
+      <div className="select-wrap">
+        <select className="select" value={val} onChange={(e) => onChange(e.target.value)}>
+          {STANDARD_TEETH.map((p) => (
+            <option key={p.value} value={p.value}>{p.label}</option>
+          ))}
+        </select>
+        <span className="select-chev">&#9662;</span>
+      </div>
+      {!current && input.Np && input.Ng && (
+        <div style={{ fontSize: 10.5, color: "var(--text-3)", marginTop: 4 }}>
+          Custom: Np {input.Np} / Ng {input.Ng} — ratio {(input.Ng / input.Np).toFixed(3)}:1
+        </div>
+      )}
+    </div>
   );
 }
 

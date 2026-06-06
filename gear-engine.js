@@ -282,26 +282,113 @@
   /* ---------- Warnings engine ---------- */
   function warnings(i, r) {
     const out = [];
-    const push = (level, title, detail) => out.push({ level, title, detail });
+    const push = (level, title, detail, fix) => out.push({ level, title, detail, fix });
 
-    if (r.SF_bend < 1.0) push("fail", "Bending fatigue failure", `Bending SF = ${r.SF_bend.toFixed(2)} < 1.0. Tooth root will fail. Increase face width, module, or upgrade material.`);
-    else if (r.SF_bend < 1.5) push("warn", "Low bending margin", `Bending SF = ${r.SF_bend.toFixed(2)}. Below the recommended 1.5 minimum for industrial drives.`);
-    else push("pass", "Bending strength adequate", `Bending SF = ${r.SF_bend.toFixed(2)} meets the 1.5 design target.`);
+    /* ---- Bending ---- */
+    if (r.SF_bend < 1.0) {
+      const needSt = Math.round(r.St_req_P / 1000);
+      push("fail", "Bending fatigue failure",
+        `Bending SF = ${r.SF_bend.toFixed(2)} (need ≥ 1.5). Tooth root will fail under the current load.`,
+        `Increase face width F, reduce diametral pitch Pn (larger teeth), or switch to a material with St ≥ ${needSt} ksi (e.g. 4320 Carburized).`);
+    } else if (r.SF_bend < 1.5) {
+      const gap = (1.5 - r.SF_bend).toFixed(2);
+      push("warn", "Low bending margin",
+        `Bending SF = ${r.SF_bend.toFixed(2)} — ${gap} below the 1.5 industrial target. Adequate for light-duty only.`,
+        `Widen the face by ~${Math.ceil((1.5 / r.SF_bend - 1) * i.F * 10) / 10} in, or select a higher St material.`);
+    } else {
+      push("pass", "Bending strength adequate",
+        `Bending SF = ${r.SF_bend.toFixed(2)} ≥ 1.5. Tooth root is safe for the specified life of ${(i.Life || 20000).toLocaleString()} hr.`);
+    }
 
-    if (r.SF_cont_power < 1.0) push("fail", "Surface pitting failure", `Contact SF = ${r.SF_cont_power.toFixed(2)} < 1.0. Flanks will pit. Increase diameter, face width or hardness.`);
-    else if (r.SF_cont_power < 1.2) push("warn", "Low contact margin", `Contact SF = ${r.SF_cont_power.toFixed(2)}. Surface durability is marginal — consider harder material.`);
-    else push("pass", "Surface durability adequate", `Contact SF = ${r.SF_cont_power.toFixed(2)} above the 1.2 pitting target.`);
+    /* ---- Contact (pitting) ---- */
+    if (r.SF_cont_power < 1.0) {
+      const needSc = Math.round(r.Sc_req_P / 1000);
+      push("fail", "Surface pitting failure",
+        `Contact SF² = ${r.SF_cont_power.toFixed(2)} < 1.0. Flank surfaces will pit rapidly.`,
+        `Increase Np, face width, or center distance to lower σc. Upgrade to Sc ≥ ${needSc} ksi — carburized 4320 or 8620 recommended.`);
+    } else if (r.SF_cont_power < 1.2) {
+      push("warn", "Low contact (pitting) margin",
+        `Contact SF² = ${r.SF_cont_power.toFixed(2)} — below the 1.2 pitting target. Pitting damage likely over full service life.`,
+        `Add face width, increase Np (larger pinion), or switch to case-hardened steel (Sc ≥ ${Math.round(r.Sc_req_P / 1000)} ksi, e.g. 8620 Carburized).`);
+    } else {
+      push("pass", "Surface durability adequate",
+        `Contact SF² = ${r.SF_cont_power.toFixed(2)} ≥ 1.2. Flank pitting life is acceptable for ${(i.Life || 20000).toLocaleString()} hr design life.`);
+    }
 
-    if (r.axialContact < 1.0) push("fail", "Insufficient helical overlap", `Axial contact ratio = ${r.axialContact.toFixed(2)} < 1.0. Not true helical action — increase face width or helix angle.`);
-    else if (r.axialContact < 2.0) push("warn", "Marginal helical overlap", `Axial contact ratio = ${r.axialContact.toFixed(2)}. ≥ 2.0 preferred for smooth, quiet running.`);
-    else push("pass", "Smooth helical engagement", `Axial contact ratio = ${r.axialContact.toFixed(2)} ≥ 2.0.`);
+    /* ---- Helical overlap ---- */
+    if (r.axialContact < 1.0) {
+      push("fail", "Insufficient helical overlap",
+        `Axial contact ratio mF = ${r.axialContact.toFixed(2)} < 1.0. The gear is behaving like a spur gear with no true helical action.`,
+        `Increase face width F or raise helix angle ψ. For Pn=${i.Pn} and current F, minimum ψ ≈ ${Math.ceil(Math.atan(Math.PI / (i.F * i.Pn)) / (Math.PI / 180))}°.`);
+    } else if (r.axialContact < 2.0) {
+      push("warn", "Marginal helical overlap",
+        `mF = ${r.axialContact.toFixed(2)} — below the ≥ 2.0 target for smooth, quiet running. One tooth pair always in contact, but noise may be noticeable.`,
+        `Increase F to ≈ ${(2.0 * Math.PI / (i.Pn * Math.tan(i.helix * Math.PI / 180))).toFixed(2)} in (at current ψ=${i.helix}°) to reach mF = 2.0.`);
+    } else {
+      push("pass", "Smooth helical engagement",
+        `mF = ${r.axialContact.toFixed(2)} ≥ 2.0. Multiple tooth pairs share load simultaneously — low noise and vibration expected.`);
+    }
 
+    /* ---- Face width / pinion diameter ratio ---- */
     const fOverD = i.F / r.dP;
-    if (fOverD > 2.0) push("warn", "Wide face width", `F/d = ${fOverD.toFixed(2)} > 2.0. Risk of uneven load distribution; verify shaft/bearing stiffness (raise Km).`);
+    const fBandLo = (3 * Math.PI / i.Pn).toFixed(2);
+    const fBandHi = (5 * Math.PI / i.Pn).toFixed(2);
+    if (fOverD > 2.0) {
+      push("warn", "Wide face (F/d > 2.0)",
+        `F/dP = ${fOverD.toFixed(2)}. Beyond 2× the pitch diameter the load distribution becomes uneven, raising Km and root stress.`,
+        `Keep F ≤ ${(2.0 * r.dP).toFixed(2)} in, or switch to a finer pitch (higher Pn) to obtain a larger pinion diameter.`);
+    } else if (fOverD < 0.5) {
+      push("warn", "Narrow face (F/d < 0.5)",
+        `F/dP = ${fOverD.toFixed(2)}. Very narrow faces may leave insufficient load-spread margin and are sensitive to misalignment.`,
+        `AGMA recommends F in the band ${fBandLo}–${fBandHi} in for Pn=${i.Pn}. Try widening F toward ${fBandLo} in.`);
+    }
 
-    if (i.Np < 14) push("warn", "Undercut risk", `Pinion has ${i.Np} teeth. Below ~14 may undercut at the root — consider profile shift or more teeth.`);
+    /* ---- Undercut ---- */
+    if (i.Np < 14) {
+      push("warn", "Undercut risk on pinion",
+        `Np = ${i.Np} teeth. Involute profile below ~14T (20° pressure angle) will undercut at the root, weakening the tooth and reducing J.`,
+        `Use at least Np = 17 (minimum recommended for ψ ≥ 15°), apply profile shift (positive x), or increase the normal pressure angle to 25°.`);
+    } else if (i.Np >= 14 && i.Np < 17) {
+      push("warn", "Low pinion tooth count",
+        `Np = ${i.Np}. Marginally above the hard undercut limit but AGMA recommends ≥ 17 teeth for the pinion of a helical pair to ensure good form factor.`,
+        `Increase Np to 17–20 and adjust Ng to maintain the target ratio.`);
+    }
 
-    if (r.Wa > 0.4 * r.Wt) push("warn", "High thrust load", `Axial thrust = ${Math.round(r.Wa)} lbf (${Math.round(100*r.Wa/r.Wt)}% of Wt). Specify thrust bearings; helix angle is steep.`);
+    /* ---- Pitch-line velocity ---- */
+    if (r.V > 4000 && i.Qv < 9) {
+      push("warn", "High velocity — upgrade quality grade",
+        `Pitch-line velocity V = ${Math.round(r.V)} ft/min. At this speed AGMA recommends quality Av ≥ 9 to keep Kv acceptable.`,
+        `Raise quality number Av to 9–11 in the Loading & Quality Factors panel, or reduce speed to below 4000 ft/min.`);
+    } else if (r.V > 8000) {
+      push("warn", "Very high pitch-line velocity",
+        `V = ${Math.round(r.V)} ft/min. Above 8000 ft/min lubrication, dynamic balance, and bearing precision become critical.`,
+        `Verify oil-jet lubrication, dynamic balancing of rotating elements, and use precision-ground gears (Av 10–11).`);
+    }
+
+    /* ---- Axial thrust ---- */
+    if (r.Wa > 0.5 * r.Wt) {
+      push("fail", "Excessive axial thrust load",
+        `Axial thrust Wa = ${Math.round(r.Wa)} lbf — ${Math.round(100 * r.Wa / r.Wt)}% of tangential load Wt. Bearing selection and shaft design must account for this.`,
+        `Reduce helix angle ψ below 20° to bring Wa under 40% of Wt, or specify angular-contact / tapered-roller thrust bearings.`);
+    } else if (r.Wa > 0.4 * r.Wt) {
+      push("warn", "High axial (thrust) load",
+        `Wa = ${Math.round(r.Wa)} lbf (${Math.round(100 * r.Wa / r.Wt)}% of Wt). Helix angle is creating significant thrust that must be handled by the bearings.`,
+        `Specify angular-contact or tapered-roller bearings for both shafts. Reducing ψ to 15–20° would lower thrust to a more manageable level.`);
+    }
+
+    /* ---- Gear ratio ---- */
+    if (r.ratio > 5.0) {
+      push("warn", "Gear ratio exceeds single-stage limit",
+        `Ratio = ${r.ratio.toFixed(2)}:1 is above the AGMA-recommended 5:1 maximum for a single helical stage. Efficiency and dynamic loads worsen at high ratios.`,
+        `Split into two stages (e.g. 2.5:1 × 2.5:1 = 6.25:1) or use a planetary arrangement to achieve ratios > 5:1.`);
+    }
+
+    /* ---- Dynamic factor ---- */
+    if (r.Kv > 1.6) {
+      push("warn", "High dynamic factor Kv",
+        `Kv = ${r.Kv.toFixed(3)} — dynamic loads are amplifying the nominal transmitted load by over 60%.`,
+        `Improve gear accuracy (raise Av), reduce pitch-line velocity, or review tooth profile modifications (tip relief) to reduce impact.`);
+    }
 
     return out;
   }
